@@ -4,6 +4,8 @@ export interface Stats {
   charisma: number;
   luck: number;
   mentalHealth: number;
+  health: number;
+  fame: number;
   money: number;
   cursedEnergy: number;
   technique: number;
@@ -39,6 +41,8 @@ export function randomStartingStats(): Stats {
     charisma: rand(20, 60),
     luck: rand(10, 70),
     mentalHealth: rand(50, 80),
+    health: rand(70, 100),
+    fame: 0,
     money: rand(0, 20),
     cursedEnergy: rand(5, 30),
     technique: 0,

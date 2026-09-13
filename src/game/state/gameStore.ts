@@ -6,6 +6,32 @@ import type { LifeEvent, EventOption } from '../data/events';
 import type { SchoolId } from '../data/schools';
 import type { TechniqueId } from '../data/techniques';
 import type { ContentPackId } from '../content/types';
+import {
+  buyAsset as buyAssetFn,
+  sellAsset as sellAssetFn,
+  equipTool as equipToolFn,
+  searchJob as searchJobFn,
+  requestPromotion as requestPromotionFn,
+  quitJob as quitJobFn,
+} from '../engine/economy';
+import { doActivity as doActivityFn } from '../engine/activities';
+import {
+  meetSomeone as meetSomeoneFn,
+  relationshipAction as relationshipActionFn,
+  type RelationshipActionType,
+} from '../engine/relationshipActions';
+import { getCurseTemplate } from '../data/curses';
+import type { MissionOffer } from '../data/missions';
+import {
+  startCombat,
+  chooseAction as combatChooseActionFn,
+  resolveAttackQte,
+  resolveDodgeQte,
+  applyCombatOutcome,
+  type CombatAction,
+  type CombatState,
+  type QteQuality,
+} from '../engine/combat';
 
 export type Screen =
   | 'menu'
@@ -14,7 +40,12 @@ export type Screen =
   | 'schoolSelection'
   | 'techniqueSelection'
   | 'endOfLife'
-  | 'settings';
+  | 'settings'
+  | 'centro'
+  | 'bienes'
+  | 'relaciones'
+  | 'actividades'
+  | 'combat';
 
 interface GameState {
   character: Character | null;
@@ -23,6 +54,8 @@ interface GameState {
   screen: Screen;
   contentPack: ContentPackId;
   devMenuUnlocked: boolean;
+  actionMessage: string | null;
+  combat: CombatState | null;
 
   startNewLife: (name: string, gender: Gender) => void;
   ageUpYear: () => void;
@@ -32,6 +65,22 @@ interface GameState {
   goToScreen: (screen: Screen) => void;
   setContentPack: (pack: ContentPackId) => void;
   unlockDevMenu: () => void;
+
+  buyAsset: (assetId: string) => void;
+  sellAsset: (assetId: string) => void;
+  equipTool: (assetId: string) => void;
+  searchJob: () => void;
+  requestPromotion: () => void;
+  quitJob: () => void;
+  doActivity: (activityId: string) => void;
+  meetSomeone: () => void;
+  relationshipAction: (relationshipId: string, action: RelationshipActionType) => void;
+
+  startMission: (mission: MissionOffer) => void;
+  combatChoose: (action: CombatAction) => void;
+  combatResolveAttack: (quality: QteQuality) => void;
+  combatResolveDodge: (quality: QteQuality) => void;
+  combatContinue: () => void;
 }
 
 export const useGameStore = create<GameState>()(
@@ -43,10 +92,12 @@ export const useGameStore = create<GameState>()(
       screen: 'menu',
       contentPack: 'original',
       devMenuUnlocked: false,
+      actionMessage: null,
+      combat: null,
 
       startNewLife: (name, gender) => {
         const character = createCharacter(name, gender);
-        set({ character, pendingEvent: null, lastResultText: null, screen: 'life' });
+        set({ character, pendingEvent: null, lastResultText: null, screen: 'life', actionMessage: null });
       },
 
       ageUpYear: () => {
@@ -64,6 +115,22 @@ export const useGameStore = create<GameState>()(
         const { character, pendingEvent } = get();
         if (!character || !pendingEvent) return;
         const next = applyEventOption(character, pendingEvent, option);
+
+        if (option.triggersCombat && next.alive) {
+          const template = getCurseTemplate(option.triggersCombat);
+          if (template) {
+            const combat = startCombat(next, template);
+            set({
+              character: next,
+              pendingEvent: null,
+              lastResultText: option.resultText,
+              combat,
+              screen: 'combat',
+            });
+            return;
+          }
+        }
+
         const goingToEnd = !next.alive || next.retired;
         const needsSchool = next.isSorcerer && !next.schoolId;
 
@@ -97,9 +164,95 @@ export const useGameStore = create<GameState>()(
         set({ character: next, screen: 'life' });
       },
 
-      goToScreen: (screen) => set({ screen }),
+      goToScreen: (screen) => set({ screen, actionMessage: null }),
       setContentPack: (pack) => set({ contentPack: pack }),
       unlockDevMenu: () => set({ devMenuUnlocked: true }),
+
+      buyAsset: (assetId) => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = buyAssetFn(character, assetId);
+        set({ character: next, actionMessage: message });
+      },
+      sellAsset: (assetId) => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = sellAssetFn(character, assetId);
+        set({ character: next, actionMessage: message });
+      },
+      equipTool: (assetId) => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = equipToolFn(character, assetId);
+        set({ character: next, actionMessage: message });
+      },
+      searchJob: () => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = searchJobFn(character);
+        set({ character: next, actionMessage: message });
+      },
+      requestPromotion: () => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = requestPromotionFn(character);
+        set({ character: next, actionMessage: message });
+      },
+      quitJob: () => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = quitJobFn(character);
+        set({ character: next, actionMessage: message });
+      },
+      doActivity: (activityId) => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = doActivityFn(character, activityId);
+        set({ character: next, actionMessage: message });
+      },
+      meetSomeone: () => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = meetSomeoneFn(character);
+        set({ character: next, actionMessage: message });
+      },
+      relationshipAction: (relationshipId, action) => {
+        const { character } = get();
+        if (!character) return;
+        const { character: next, message } = relationshipActionFn(character, relationshipId, action);
+        set({ character: next, actionMessage: message });
+      },
+
+      startMission: (mission) => {
+        const { character } = get();
+        if (!character) return;
+        const template = getCurseTemplate(mission.curseId);
+        if (!template) return;
+        const combat = startCombat(character, template);
+        set({ combat, screen: 'combat' });
+      },
+      combatChoose: (action) => {
+        const { character, combat } = get();
+        if (!character || !combat) return;
+        set({ combat: combatChooseActionFn(combat, action, character) });
+      },
+      combatResolveAttack: (quality) => {
+        const { character, combat } = get();
+        if (!character || !combat) return;
+        set({ combat: resolveAttackQte(combat, quality, character) });
+      },
+      combatResolveDodge: (quality) => {
+        const { character, combat } = get();
+        if (!character || !combat) return;
+        set({ combat: resolveDodgeQte(combat, quality, character) });
+      },
+      combatContinue: () => {
+        const { character, combat } = get();
+        if (!character || !combat) return;
+        const { character: updated } = applyCombatOutcome(character, combat);
+        const goingToEnd = !updated.alive;
+        set({ character: updated, combat: null, screen: goingToEnd ? 'endOfLife' : 'life' });
+      },
     }),
     {
       name: 'jujutsu-life-save',

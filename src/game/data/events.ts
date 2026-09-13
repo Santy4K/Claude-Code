@@ -10,6 +10,7 @@ export interface EventOption {
   death?: boolean;
   deathCause?: string;
   retire?: boolean;
+  triggersCombat?: string;
 }
 
 export interface LifeEvent {
@@ -387,9 +388,9 @@ export const events: LifeEvent[] = [
       },
       {
         label: 'Plantarte y resistir para proteger a otros',
-        resultText: 'Saliste malherido, pero lograste salvar a los civiles cercanos.',
-        effects: { physical: -8, mentalHealth: -3, reputation: 8, cursedEnergy: 4 },
+        resultText: 'No hay tiempo para dudar. Te preparás para pelear.',
         setFlags: ['survived_special_grade'],
+        triggersCombat: 'special_grade_boss',
       },
     ],
   },
@@ -464,8 +465,8 @@ export const events: LifeEvent[] = [
     options: [
       {
         label: 'Enfrentarlo de lleno, sin apoyo',
-        resultText: 'Fue la pelea más dura de tu vida. Sobreviviste por muy poco.',
-        effects: { physical: -15, mentalHealth: -10, cursedEnergy: 10, reputation: 20 },
+        resultText: 'No vas a tener otra oportunidad. Es ahora o nunca.',
+        triggersCombat: 'antagonist_boss',
       },
       {
         label: 'Coordinar con otros hechiceros antes de actuar',

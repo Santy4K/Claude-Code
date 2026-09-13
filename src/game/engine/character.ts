@@ -3,6 +3,7 @@ import type { SchoolId } from '../data/schools';
 import type { TechniqueId } from '../data/techniques';
 import type { RankId } from '../data/ranks';
 import type { LifeStage } from '../data/events';
+import { createStarterFamily, type Relationship } from '../data/relationships';
 
 export interface LogEntry {
   age: number;
@@ -10,6 +11,10 @@ export interface LogEntry {
 }
 
 export type Gender = 'male' | 'female' | 'other';
+
+export interface JobState {
+  tierIndex: number;
+}
 
 export interface Character {
   name: string;
@@ -26,6 +31,11 @@ export interface Character {
   rank: RankId;
   deathCause?: string;
   log: LogEntry[];
+  relationships: Relationship[];
+  assets: string[];
+  equippedToolId?: string;
+  job: JobState | null;
+  activityUses: Record<string, number>;
 }
 
 export function createCharacter(name: string, gender: Gender): Character {
@@ -41,6 +51,10 @@ export function createCharacter(name: string, gender: Gender): Character {
     isSorcerer: false,
     rank: 'grade4',
     log: [{ age: 0, text: `${name} nació.` }],
+    relationships: createStarterFamily(),
+    assets: [],
+    job: null,
+    activityUses: {},
   };
 }
 

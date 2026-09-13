@@ -2,6 +2,8 @@ import { events, type EventOption, type LifeEvent } from '../data/events';
 import { applyDelta } from '../data/stats';
 import { rankForScore, rankScore } from '../data/ranks';
 import { currentStage, type Character } from './character';
+import { payJobSalary } from './economy';
+import { ensureCanonNpcs } from './relationshipActions';
 
 function pickWeighted(pool: LifeEvent[]): LifeEvent {
   const totalWeight = pool.reduce((sum, e) => sum + (e.weight ?? 1), 0);
@@ -47,7 +49,8 @@ export function ageUp(character: Character): AgeUpResult {
   }
 
   const nextAge = character.age + 1;
-  let next: Character = { ...character, age: nextAge, log: [...character.log] };
+  let next: Character = { ...character, age: nextAge, log: [...character.log], activityUses: {} };
+  next = payJobSalary(next);
 
   if (Math.random() < naturalDeathChance(next)) {
     next = {
@@ -82,7 +85,7 @@ function resolveExam(character: Character): Character {
     (Math.random() * 20 - 10);
 
   if (score >= EXAM_PASS_THRESHOLD) {
-    return {
+    const promoted: Character = {
       ...character,
       isSorcerer: true,
       flags: { ...character.flags, exam_passed: true },
@@ -91,6 +94,7 @@ function resolveExam(character: Character): Character {
         { age: character.age, text: '¡Aprobaste el examen de ingreso! Ahora sos estudiante de hechicería.' },
       ],
     };
+    return ensureCanonNpcs(promoted);
   }
 
   return {

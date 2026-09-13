@@ -1,6 +1,8 @@
 import { useGameStore } from '../../game/state/gameStore';
 import { ranks } from '../../game/data/ranks';
 import { Sigil } from '../components/Sigil';
+import { computeEpitaph } from '../../game/engine/epitaph';
+import { highestOwnedHouse } from '../../game/data/assets';
 
 export function EndOfLife() {
   const character = useGameStore((s) => s.character);
@@ -9,10 +11,14 @@ export function EndOfLife() {
   if (!character) return null;
 
   const rankLabel = ranks.find((r) => r.id === character.rank)?.label;
+  const epitaph = computeEpitaph(character);
+  const house = highestOwnedHouse(character.assets);
+  const children = character.relationships.filter((r) => r.role === 'child');
 
   return (
     <div className="screen center-text">
       <div className="spacer" />
+      {epitaph && <div className="epitaph-ribbon">{epitaph}</div>}
       <Sigil size={56} variant="ash" className="tombstone" />
       <p className="eyebrow">Folio cerrado</p>
       <h1 className="title">{character.name}</h1>
@@ -31,8 +37,18 @@ export function EndOfLife() {
           </div>
         )}
         <div className="log-entry" style={{ border: 'none', padding: '4px 0' }}>
-          Dinero acumulado: <strong>${Math.round(character.stats.money)}</strong>
+          Patrimonio: <strong>${Math.round(character.stats.money)}</strong>
         </div>
+        {house && (
+          <div className="log-entry" style={{ border: 'none', padding: '4px 0' }}>
+            Residencia: <strong>{house.name}</strong>
+          </div>
+        )}
+        {children.length > 0 && (
+          <div className="log-entry" style={{ border: 'none', padding: '4px 0' }}>
+            Hijos: <strong>{children.length}</strong>
+          </div>
+        )}
         <div className="log-entry" style={{ border: 'none', padding: '4px 0 0' }}>
           Eventos vividos: <strong>{character.log.length}</strong>
         </div>
