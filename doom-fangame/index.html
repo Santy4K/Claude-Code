@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UMBRAL — fangame de DOOM</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: "Courier New", Courier, monospace; color: #ccc; }
+  #game { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  #screen {
+    display: block; width: 100%; height: 100%; background: #000;
+    image-rendering: pixelated; image-rendering: crisp-edges; cursor: crosshair;
+  }
+  .overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, .84); text-align: center; padding: 4%; box-sizing: border-box;
+  }
+  .hidden { display: none !important; }
+  .box { max-width: 760px; }
+  h1 {
+    margin: 0 0 .2em; font-size: clamp(28px, 7vw, 72px); letter-spacing: .12em; color: #c22;
+    text-shadow: 3px 3px 0 #400, 0 0 18px #f30; font-family: Impact, "Arial Black", sans-serif;
+  }
+  h2 { margin: 0 0 .6em; color: #c22; letter-spacing: .1em; font-family: Impact, "Arial Black", sans-serif; font-size: clamp(22px, 4.5vw, 44px); text-shadow: 2px 2px 0 #400; }
+  .sub { color: #a86; letter-spacing: .3em; font-size: clamp(10px, 1.6vw, 14px); margin-bottom: 1.4em; }
+  .story { color: #ddd; font-size: clamp(11px, 1.7vw, 16px); line-height: 1.5; text-align: left; margin: 0 auto 1.2em; }
+  .controls { color: #8a8; font-size: clamp(10px, 1.4vw, 13px); line-height: 1.6; margin-bottom: 1.2em; }
+  .controls b { color: #dd6; }
+  .blink { color: #e33; font-weight: bold; animation: blink 1s steps(2) infinite; font-size: clamp(12px, 2vw, 18px); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .stats { font-size: clamp(13px, 2.2vw, 20px); color: #e44; line-height: 1.7; margin-bottom: 1em; font-weight: bold; }
+  /* --- Terminal de lore --- */
+  #terminal { background: rgba(0, 0, 0, .7); }
+  .crt {
+    width: 86%; max-width: 820px; max-height: 86%; overflow: auto; text-align: left;
+    background: #031a08; border: 3px solid #4a4a48; box-shadow: 0 0 0 4px #222, 0 0 30px #0a3 inset;
+    color: #3f6; padding: 18px 22px; box-sizing: border-box; font-size: clamp(11px, 1.6vw, 15px); line-height: 1.5;
+    text-shadow: 0 0 4px #1f4;
+  }
+  .crt .hdr { color: #9f9; border-bottom: 1px dashed #2a6; padding-bottom: 6px; margin-bottom: 10px; white-space: pre-wrap; }
+  .crt .body { white-space: pre-wrap; min-height: 6em; }
+  .crt .ftr { color: #2a6; margin-top: 12px; border-top: 1px dashed #2a6; padding-top: 6px; }
+  .cursor { animation: blink .8s steps(2) infinite; }
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="screen" width="320" height="200"></canvas>
+
+  <!-- Pantalla de título -->
+  <div id="title" class="overlay">
+    <div class="box">
+      <h1>UMBRAL</h1>
+      <div class="sub">UN FANGAME DE DOOM · E1M1: ESTACIÓN DE RELEVO E-3</div>
+      <div class="story">
+        FOBOS. Hace seis horas la Estación de Relevo E-3 dejó de transmitir. La UAC mandó un escuadrón
+        de seguridad a revisar "un fallo de comunicaciones". Vos sos M. Ríos, marine con tres semanas en la luna,
+        y te dejaron custodiando el ascensor. La radio del escuadrón se cortó hace veinte minutos.<br><br>
+        Ya nadie va a bajar a buscarte. Entrá, averiguá qué pasó y encontrá la salida del sector.
+      </div>
+      <div class="controls">
+        <b>WASD</b> moverse · <b>← →</b> / <b>mouse</b> girar · <b>Shift</b> correr<br>
+        <b>Click</b> / <b>Ctrl</b> disparar · <b>E</b> / <b>Espacio</b> usar (puertas, terminales, interruptores)<br>
+        <b>Esc</b> pausa · <b>F</b> mostrar FPS
+      </div>
+      <div class="blink">CLICK PARA EMPEZAR</div>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <div class="box"><h2>PAUSA</h2><div class="blink">CLICK PARA CONTINUAR</div></div>
+  </div>
+
+  <div id="terminal" class="overlay hidden">
+    <div class="crt">
+      <div class="hdr" id="termHdr"></div>
+      <div class="body"><span id="termBody"></span><span class="cursor">█</span></div>
+      <div class="ftr">[E] / [ESPACIO] CERRAR TERMINAL</div>
+    </div>
+  </div>
+
+  <div id="dead" class="overlay hidden" style="background:rgba(80,0,0,.55)">
+    <div class="box"><h2>ESTÁS MUERTO</h2><div class="blink">CLICK O ENTER PARA REINTENTAR</div></div>
+  </div>
+
+  <div id="inter" class="overlay hidden">
+    <div class="box">
+      <h2>E1M1 COMPLETADO</h2>
+      <div class="stats" id="interStats"></div>
+      <div class="story" id="interText"></div>
+      <div class="blink">ENTER PARA JUGAR DE NUEVO</div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   UMBRAL — fangame de Doom en un solo archivo.
+   Secciones:
+     1. CONFIG ........ constantes globales del motor
+     2. UTILIDADES .... PRNG, colores, fuente bitmap 3x5
+     3. TEXTURAS ...... generación procedural de paredes/pisos (64x64) + tablas de luz
+     4. SPRITES ....... generación procedural de enemigos, items, efectos y arma
+     5. LORE .......... textos de terminales, intro e intermisión
+     6. MAPA .......... definición del nivel (matriz 2D), puertas, luces
+     7. AUDIO ......... efectos de sonido mínimos con Web Audio (provisional)
+     8. ENTIDADES ..... jugador, enemigos (IA), pickups, efectos
+     9. INPUT ......... teclado, mouse y pointer lock
+    10. MOTOR ......... raycaster (piso/techo, paredes, puertas, sprites con z-buffer)
+    11. HUD ........... barra de estado, arma, mensajes, flashes de pantalla
+    12. JUEGO ......... estados, bucle principal, pantallas
+   ===================================================================== */
+
+/* =====================================================================
+   1. CONFIG
+   ===================================================================== */
+const W = 320, H = 200;              // resolución interna (estilo Doom)
+const HUD_H = 32, VIEW_H = H - HUD_H; // vista 3D: 320x168
+const HORIZON = VIEW_H / 2;          // 84
+const TEX = 64;                      // tamaño de texturas
+const PLANE = 0.75;                  // mitad del plano de cámara (FOV ≈ 74°)
+const PROJ = (W / 2) / PLANE;        // escala de proyección (px por unidad a distancia 1)
+const LIGHT_FALLOFF = 1.15;          // niveles de luz que se pierden por unidad de distancia
+const LIGHT_LEVELS = 16;
+const MOVE_SPEED = 3.4, RUN_MULT = 1.65, TURN_SPEED = 2.8, MOUSE_SENS = 0.0026;
+const PLAYER_R = 0.24;
+const USE_RANGE = 1.6;
+
+/* =====================================================================
+   2. UTILIDADES
+   ===================================================================== */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let rng = mulberry32(1993);
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+// Pixel en formato ABGR (little-endian) para escribir directo en ImageData
+const packRGBA = (r, g, b, a = 255) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
+
+// Fuente bitmap 3x5 (para HUD, mensajes y texturas). Cada glifo = 15 bits fila por fila ("%" usa 5x5).
+const FONT = {
+  A:"010101111101101",B:"110101110101110",C:"011100100100011",D:"110101101101110",E:"111100110100111",
+  F:"111100110100100",G:"011100101101011",H:"101101111101101",I:"111010010010111",J:"001001001101010",
+  K:"101101110101101",L:"100100100100111",M:"101111111101101",N:"110101101101101",O:"010101101101010",
+  P:"110101110100100",Q:"010101101110011",R:"110101110101101",S:"011100010001110",T:"111010010010010",
+  U:"101101101101111",V:"101101101101010",W:"101101111111101",X:"101101010101101",Y:"101101010010010",
+  Z:"111001010100111","0":"111101101101111","1":"010110010010111","2":"110001010100111","3":"110001010001110",
+  "4":"101101111001001","5":"111100110001110","6":"011100111101111","7":"111001010010010","8":"111101111101111",
+  "9":"111101111001110","%":"1100111010001000101110011","-":"000000111000000",".":"000000000000010",":":"000010000010000",
+  "!":"010010010000010","/":"001001010100100","'":"010010000000000",",":"000000000010100","?":"110001010000010",
+  "+":"000010111010000"," ":"000000000000000"
+};
+// Pasa texto a mayúsculas sin tildes (la fuente es ASCII)
+const normText = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[¡¿]/g, "").toUpperCase();
+// Dibuja texto con una función de plot genérica (sirve para canvas y para texturas)
+function drawGlyphs(plot, str, x, y, scale = 1) {
+  str = normText(str);
+  for (let i = 0; i < str.length; i++) {
+    const g = FONT[str[i]] || FONT["?"], gw = g.length / 5;       // glifos de 3x5 (o 5x5 para "%")
+    for (let b = 0; b < g.length; b++) if (g[b] === "1") plot(x + (b % gw) * scale, y + ((b / gw) | 0) * scale, scale);
+    x += (gw + 1) * scale;
+  }
+}
+function drawText(ctx, str, x, y, color, scale = 1, shadow = true) {
+  if (shadow) { ctx.fillStyle = "#000"; drawGlyphs((px, py, s) => ctx.fillRect(px + 1, py + 1, s, s), str, x, y, scale); }
+  ctx.fillStyle = color;
+  drawGlyphs((px, py, s) => ctx.fillRect(px, py, s, s), str, x, y, scale);
+}
+const textWidth = (str, scale = 1) => [...normText(str)].reduce((w, ch) => w + ((FONT[ch] || FONT["?"]).length / 5 + 1) * scale, 0) - scale;
+
+/* =====================================================================
+   3. TEXTURAS (paredes, pisos, techos)
+   Cada textura se dibuja en RGBA y luego se generan 16 versiones sombreadas
+   (como el COLORMAP de Doom) para que el render sea solo un lookup.
+   ===================================================================== */
+const TEXLIST = [];          // índice -> textura
+const T = {};                // nombre -> índice
+
+function makeShades(px) {   // px: Uint8ClampedArray RGBA de 64x64 (o cualquier tamaño)
+  const n = px.length / 4, shades = [];
+  for (let l = 0; l < LIGHT_LEVELS; l++) {
+    const f = 0.07 + 0.93 * Math.pow(l / (LIGHT_LEVELS - 1), 1.15);
+    const out = new Uint32Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = px[i * 4 + 3];
+      if (a < 128) { out[i] = 0; continue; }       // 0 = transparente
+      out[i] = packRGBA(px[i * 4] * f | 0, px[i * 4 + 1] * f | 0, px[i * 4 + 2] * f | 0, 255);
+    }
+    shades.push(out);
+  }
+  return shades;
+}
+
+// Mini "lienzo" para dibujar texturas pixel a pixel
+function texCanvas() {
+  const px = new Uint8ClampedArray(TEX * TEX * 4);
+  const set = (x, y, c, a = 255) => {
+    x &= 63; y &= 63; const i = (y * TEX + x) * 4;
+    px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = a;
+  };
+  const get = (x, y) => { const i = ((y & 63) * TEX + (x & 63)) * 4; return [px[i], px[i + 1], px[i + 2]]; };
+  // Rellena con ruido cuantizado (paleta limitada: pasos de brillo discretos)
+  const rect = (x, y, w, h, c, noise = 0, steps = 5) => {
+    for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) {
+      const n = noise ? 1 + (Math.round((rng() - 0.5) * steps) / steps) * noise : 1;
+      set(i, j, [c[0] * n, c[1] * n, c[2] * n]);
+    }
+  };
+  const shade = (x, y, w, h, f) => {
+    for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) {
+      const c = get(i, j); set(i, j, [c[0] * f, c[1] * f, c[2] * f]);
+    }
+  };
+  const text = (str, x, y, c, s = 1) => drawGlyphs((qx, qy, sc) => rect(qx, qy, sc, sc, c), str, x, y, s);
+  return { px, set, get, rect, shade, text };
+}
+function addTex(name, t, opts = {}) {
+  T[name] = TEXLIST.length;
+  TEXLIST.push({ name, shades: makeShades(t.px), anim: !!opts.anim });
+}
+
+// Panel metálico estilo STARTAN: placas marrón-grisáceas, juntas, remaches y franja central
+function paintMetal(t) {
+  t.rect(0, 0, 64, 64, [128, 114, 96], 0.14);
+  for (const y of [0, 31]) { t.rect(0, y, 64, 1, [52, 44, 36]); t.rect(0, y + 1, 64, 1, [168, 152, 130]); }
+  for (const x of [0, 32]) { t.rect(x, 0, 1, 64, [56, 48, 40]); t.rect(x + 1, 0, 1, 64, [160, 146, 124]); }
+  t.rect(0, 40, 64, 7, [92, 82, 70], 0.1);                   // franja de bloques
+  for (let x = 2; x < 64; x += 8) { t.rect(x, 41, 6, 5, [112, 100, 84], 0.08); t.rect(x, 45, 6, 1, [64, 56, 46]); }
+  t.rect(0, 40, 64, 1, [60, 52, 42]); t.rect(0, 47, 64, 1, [150, 136, 116]);
+  for (const [x, y] of [[4, 4], [28, 4], [36, 4], [60, 4], [4, 27], [28, 27], [36, 27], [60, 27], [4, 56], [28, 56], [36, 56], [60, 56]]) {
+    t.set(x, y, [200, 190, 170]); t.set(x + 1, y + 1, [50, 42, 34]);
+  }
+}
+function genTextures() {
+  rng = mulberry32(666);
+  let t;
+  // --- METAL (paredes base) ---
+  t = texCanvas(); paintMetal(t); addTex("metal", t);
+
+  // --- TECH (paneles de computadora, COMPTALL) ---
+  t = texCanvas();
+  t.rect(0, 0, 64, 64, [50, 52, 58], 0.12);
+  t.rect(0, 0, 64, 2, [100, 102, 110]); t.rect(0, 62, 64, 2, [24, 24, 28]);
+  t.rect(0, 0, 2, 64, [90, 92, 100]); t.rect(62, 0, 2, 64, [22, 22, 26]);
+  t.rect(8, 8, 48, 20, [10, 12, 14]); t.rect(8, 8, 48, 1, [4, 4, 6]); t.rect(8, 28, 48, 1, [110, 110, 120]);
+  for (let i = 0; i < 5; i++) t.rect(11, 11 + i * 3, 8 + ((rng() * 30) | 0), 1, [40, 200, 70]);
+  const ledCols = [[220, 40, 30], [40, 210, 60], [230, 200, 40], [60, 110, 230]];
+  for (let y = 34; y < 58; y += 6) for (let x = 8; x < 56; x += 6) {
+    t.rect(x, y, 4, 3, [26, 26, 30]);
+    if (rng() < 0.55) t.rect(x + 1, y + 1, 2, 1, ledCols[(rng() * 4) | 0]);
+  }
+  addTex("tech", t);
+
+  // --- LADRILLO ROJO (presagio del infierno) ---
+  t = texCanvas();
+  t.rect(0, 0, 64, 64, [40, 12, 8]);
+  for (let row = 0; row < 8; row++) {
+    const off = (row & 1) ? 8 : 0;
+    for (let bx = -1; bx < 4; bx++) {
+      const x = bx * 16 + off + 1, y = row * 8 + 1, base = 0.75 + rng() * 0.4;
+      t.rect(x, y, 15, 7, [150 * base, 34 * base, 22 * base], 0.25);
+      t.rect(x, y, 15, 1, [190 * base, 60 * base, 40 * base]);
+      t.rect(x, y + 6, 15, 1, [90 * base, 18 * base, 12 * base]);
+    }
+  }
+  for (let i = 0; i < 40; i++) t.set((rng() * 64) | 0, (rng() * 64) | 0, [20, 4, 2]);   // grietas
+  addTex("brick", t);
+
+  // --- PUERTA (BIGDOOR) ---
+  t = texCanvas();
+  t.rect(0, 0, 64, 64, [104, 104, 110], 0.1);
+  t.rect(3, 3, 58, 46, [80, 80, 88], 0.08);
+  for (let y = 7; y < 46; y += 6) { t.rect(6, y, 52, 2, [128, 128, 136]); t.rect(6, y + 2, 52, 1, [50, 50, 56]); }
+  t.rect(18, 18, 28, 13, [36, 36, 40]); t.text("UAC", 21, 20, [210, 200, 60], 2);
+  for (let x = -12; x < 64; x += 8) for (let y = 52; y < 62; y++) for (let k = 0; k < 4; k++) t.set(x + k + (y - 52), y, [210, 180, 20]);
+  for (let x = -8; x < 64; x += 8) for (let y = 52; y < 62; y++) for (let k = 0; k < 4; k++) t.set(x + k + (y - 52), y, [24, 24, 20]);
+  t.rect(0, 51, 64, 1, [40, 40, 44]); t.rect(0, 62, 64, 2, [40, 40, 44]);
+  addTex("door", t);
+
+  // --- RIEL DE PUERTA (DOORTRAK) ---
+  t = texCanvas();
+  t.rect(0, 0, 64, 64, [70, 70, 74], 0.12);
+  for (let x = 4; x < 64; x += 12) { t.rect(x, 0, 3, 64, [40, 40, 44]); t.rect(x + 3, 0, 1, 64, [120, 120, 126]); }
+  addTex("doortrak", t);
+
+  // --- TERMINAL (pantalla CRT con texto) ---
+  t = texCanvas(); paintMetal(t);
+  t.rect(10, 6, 44, 34, [40, 40, 44]); t.rect(12, 8, 40, 30, [6, 34, 14]);
+  for (let i = 0; i < 7; i++) t.rect(14, 10 + i * 4, 6 + ((rng() * 30) | 0), 2, [70, 240, 110]);
+  t.rect(14, 38 - 4, 3, 2, [180, 255, 190]);
+  t.rect(12, 48, 40, 10, [44, 44, 48]);
+  for (let y = 49; y < 57; y += 3) for (let x = 13; x < 51; x += 4) t.rect(x, y, 3, 2, [96, 96, 100]);
+  addTex("terminal", t);
+
+  // --- INTERRUPTOR DE SALIDA (apagado / encendido) ---
+  for (const on of [false, true]) {
+    t = texCanvas(); paintMetal(t);
+    t.rect(14, 4, 36, 11, [20, 4, 4]); t.text("EXIT", 17, 5, on ? [60, 255, 60] : [255, 40, 30], 2);
+    t.rect(20, 22, 24, 34, [60, 60, 66]); t.rect(22, 24, 20, 30, [30, 30, 34]);
+    t.rect(30, on ? 27 : 38, 4, 14, [170, 170, 176]);       // palanca
+    t.rect(28, on ? 25 : 50, 8, 4, on ? [40, 220, 40] : [220, 40, 30]);
+    addTex(on ? "exitOn" : "exit", t);
+  }
+
+  // --- PISOS / TECHOS ---
+  t = texCanvas();                                  // baldosas grises (FLOOR4_8)
+  t.rect(0, 0, 64, 64, [92, 92, 98], 0.16);
+  for (const p of [0, 32]) { t.rect(p, 0, 1, 64, [46, 46, 50]); t.rect(0, p, 64, 1, [46, 46, 50]); t.rect(p + 1, 0, 1, 64, [124, 124, 130]); t.rect(0, p + 1, 64, 1, [124, 124, 130]); }
+  addTex("floor", t);
+
+  t = texCanvas();                                  // roca rojiza (sector profundo)
+  t.rect(0, 0, 64, 64, [84, 46, 34], 0.3, 6);
+  for (let i = 0; i < 26; i++) { const x = rng() * 64 | 0, y = rng() * 64 | 0, r = 2 + rng() * 5 | 0; t.rect(x, y, r, r, [60, 28, 20], 0.2); }
+  addTex("floor2", t);
+
+  t = texCanvas();                                  // nukage (tileable con senos de frecuencia entera)
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const a = Math.PI * 2 / 64;
+    let v = Math.sin(x * a * 2) + Math.sin(y * a * 3 + 1) + Math.sin((x + y) * a + 2) + Math.sin((x - y) * a * 2);
+    v = Math.round((v + 4) / 8 * 5) / 5;
+    t.set(x, y, [20 + 60 * v * v, 90 + 150 * v, 20 + 40 * v]);
+  }
+  addTex("nukage", t, { anim: true });
+
+  t = texCanvas();                                  // techo
+  t.rect(0, 0, 64, 64, [70, 70, 74], 0.1);
+  for (const p of [0, 31]) { t.rect(p, 0, 2, 64, [38, 38, 42]); t.rect(0, p, 64, 2, [38, 38, 42]); }
+  addTex("ceil", t);
+
+  t = texCanvas();                                  // techo con luminaria
+  t.rect(0, 0, 64, 64, [70, 70, 74], 0.1);
+  t.rect(12, 12, 40, 40, [40, 40, 44]); t.rect(16, 16, 32, 32, [235, 235, 210], 0.05);
+  addTex("ceilLight", t);
+
+  t = texCanvas();                                  // techo de roca oscura
+  t.rect(0, 0, 64, 64, [50, 30, 26], 0.3, 6);
+  addTex("ceil2", t);
+}
+
+/* =====================================================================
+   4. SPRITES (dibujados con Canvas2D en 64x64 y convertidos a tablas sombreadas)
+   ===================================================================== */
+const SPR = {};
+function makeSprite(name, drawFn, w = 64, h = 64) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  const r = (x, y, ww, hh, col) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
+  drawFn(r, g);
+  const px = g.getImageData(0, 0, w, h).data;
+  SPR[name] = { w, h, shades: makeShades(px) };
+}
+// Canvas suelto (para el arma y la cara, que se dibujan en espacio de pantalla)
+function makeCanvas(w, h, drawFn) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  drawFn((x, y, ww, hh, col) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); }, g);
+  return c;
+}
+
+// Poseído: ex-guardia de la UAC (equivalente al Zombieman)
+function drawZombie(r, frame) {
+  const skin = "#9a9070", skinD = "#6e664e", armor = "#4f6a34", armorD = "#34481f", armorL = "#6d8a48",
+        pants = "#3c4426", boot = "#2a2018", gun = "#3a3a3e", gunL = "#6a6a70";
+  const dying = frame.startsWith("die");
+  if (frame === "die3") {             // cadáver en el piso
+    r(14, 56, 38, 6, "#5a0a08"); r(18, 54, 30, 5, armorD); r(20, 53, 14, 4, armor);
+    r(36, 54, 8, 4, skinD); r(46, 57, 10, 4, pants); r(10, 59, 46, 4, "#7a0c0a"); r(24, 60, 6, 2, "#a01810");
+    return;
+  }
+  if (frame === "die2") {             // cayendo de rodillas
+    r(20, 50, 24, 12, pants); r(18, 60, 10, 4, boot); r(36, 60, 10, 4, boot);
+    r(19, 36, 26, 16, armor); r(19, 36, 26, 3, armorL); r(22, 46, 20, 3, "#5a3a1a");
+    r(25, 28, 14, 10, skinD); r(27, 26, 10, 4, "#8a1a12"); r(16, 30, 30, 4, "#8a1410");
+    r(14, 40, 6, 3, "#b02018"); r(44, 34, 5, 3, "#b02018");
+    return;
+  }
+  const lo = frame === "walkB" ? 1 : 0;
+  // piernas (alternan al caminar)
+  const lx = 24 + (frame === "walkA" ? -2 : frame === "walkB" ? 2 : 0), rx = 34 - (frame === "walkA" ? -2 : frame === "walkB" ? 2 : 0);
+  r(lx, 40, 7, 19 - lo * 2, pants); r(rx, 40, 7, 19 - (1 - lo) * 2, pants);
+  r(lx - 1, 58 - lo * 2, 9, 5, boot); r(rx - 1, 58 - (1 - lo) * 2, 9, 5, boot);
+  // torso con chaleco
+  r(21, 20, 22, 21, armor); r(21, 20, 22, 2, armorL); r(21, 38, 22, 3, "#5a3a1a"); r(30, 38, 4, 3, "#a08040");
+  r(23, 24, 7, 10, armorD); r(34, 24, 7, 10, armorD); r(31, 22, 2, 16, armorD);
+  // cabeza
+  r(26, 7, 12, 13, skin); r(26, 7, 12, 3, "#3a2a1a"); r(26, 16, 12, 4, skinD);
+  r(28, 12, 3, 2, "#e01010"); r(33, 12, 3, 2, "#e01010");           // ojos rojos
+  r(30, 17, 4, 1, "#301010"); r(35, 15, 2, 5, "#801010");
+  if (frame === "aim" || frame === "fire") {
+    // apunta el rifle hacia el jugador
+    r(17, 22, 6, 12, armor); r(41, 22, 6, 12, armor); r(26, 26, 12, 6, skin);
+    r(27, 24, 10, 8, gun); r(29, 26, 6, 4, "#151517"); r(28, 24, 8, 1, gunL);
+    if (frame === "fire") { r(24, 18, 16, 14, "#ffcc33"); r(27, 21, 10, 8, "#fff6c0"); r(30, 14, 4, 22, "#ffaa22"); r(20, 24, 24, 4, "#ffaa22"); }
+  } else {
+    // brazos y rifle cruzado
+    r(17, 21, 5, 15, armor); r(42, 21, 5, 15, armor); r(17, 35, 5, 3, skin); r(42, 31, 5, 3, skin);
+    r(14, 30, 36, 3, gun); r(14, 30, 36, 1, gunL); r(44, 33, 3, 5, gun);
+  }
+  if (frame === "pain") { r(28, 22, 8, 6, "#c01818"); r(30, 28, 3, 6, "#900c0c"); }
+  if (frame === "die1") { r(24, 2, 16, 10, "#b01410"); r(20, 6, 6, 4, "#d02018"); r(38, 4, 6, 6, "#d02018"); r(26, 20, 14, 10, "#901010"); }
+  void dying;
+}
+function genSprites() {
+  for (const f of ["walkA", "walkB", "aim", "fire", "pain", "die1", "die2", "die3"])
+    makeSprite("zombie_" + f, r => drawZombie(r, f));
+
+  makeSprite("clip", r => {                 // cargador de balas
+    r(22, 50, 20, 13, "#4a3a20"); r(22, 50, 20, 2, "#7a6232"); r(22, 61, 20, 2, "#2a2010");
+    for (let x = 24; x < 40; x += 4) { r(x, 44, 3, 7, "#d0a030"); r(x, 44, 3, 2, "#f0d070"); }
+    r(26, 54, 12, 4, "#2a2010");
+  });
+  makeSprite("stim", r => {                 // estimulante (botiquín chico)
+    r(22, 48, 20, 15, "#d8d8d8"); r(22, 48, 20, 2, "#ffffff"); r(22, 61, 20, 2, "#909090");
+    r(30, 50, 4, 11, "#d01010"); r(26, 54, 12, 4, "#d01010");
+  });
+  makeSprite("lamp", r => {                 // lámpara técnica (fullbright)
+    r(22, 58, 20, 6, "#3a3a40"); r(24, 56, 16, 3, "#55555c");
+    r(30, 18, 4, 40, "#5a5a62"); r(30, 18, 1, 40, "#8a8a92");
+    r(24, 2, 16, 18, "#9ab8ff"); r(26, 4, 12, 14, "#eef4ff"); r(23, 1, 18, 2, "#55555c"); r(23, 19, 18, 2, "#55555c");
+  });
+  for (let i = 0; i < 3; i++) {             // impacto de bala en pared
+    makeSprite("puff" + i, r => {
+      const s = 10 - i * 3, c = ["#ffffff", "#c8c8c8", "#808080"][i];
+      r(32 - s / 2, 32 - s / 2, s, s, c); r(32 - 1, 32 - s, 2, s * 2, c); r(32 - s, 32 - 1, s * 2, 2, c);
+    });
+    makeSprite("blood" + i, r => {          // sangre al impactar a un enemigo
+      const o = i * 4;
+      r(28, 26 + o, 8, 8, "#c01010"); r(24, 30 + o, 4, 4, "#901010"); r(37, 28 + o, 3, 3, "#e02020");
+      if (i < 2) { r(31, 20 + o, 2, 4, "#c01010"); r(34, 36 + o, 3, 3, "#801010"); }
+    });
+  }
+}
+
+// Arma: pistola vista desde atrás, sostenida por la mano del marine
+let GUN = null, GUN_FLASH = null;
+function genWeapon() {
+  GUN = makeCanvas(80, 70, r => {
+    const sk = "#c08c62", skD = "#8a5a3a", skL = "#e0aa7c";
+    r(30, 14, 20, 24, "#3c3c42"); r(30, 14, 20, 3, "#7a7a84"); r(31, 17, 2, 21, "#56565e");  // corredera
+    r(32, 8, 3, 6, "#2a2a30"); r(45, 8, 3, 6, "#2a2a30");                                      // miras
+    r(36, 18, 8, 4, "#1c1c20");                                                                 // martillo
+    r(31, 38, 18, 10, "#2c2c32");                                                               // armazón
+    // mano: dedos envolviendo la empuñadura, con bordes redondeados y sombreado
+    r(26, 37, 30, 33, sk); r(24, 40, 34, 30, sk);
+    for (let i = 0; i < 4; i++) { const fy = 38 + i * 7; r(24, fy, 34, 1, skL); r(25, fy + 5, 32, 2, skD); r(24, fy + 1, 2, 5, skD); }
+    r(54, 38, 4, 32, skD); r(52, 40, 2, 28, "#a87650");                                         // lateral en sombra
+    r(27, 26, 5, 15, sk); r(27, 26, 1, 15, skL); r(31, 27, 1, 14, skD); r(28, 25, 3, 1, skL);    // pulgar
+    r(22, 46, 2, 24, skD);
+    r(20, 64, 42, 6, "#3e5a2a"); r(20, 64, 42, 1, "#5a7a3e");                                   // manga
+  });
+  GUN_FLASH = makeCanvas(40, 30, r => {
+    r(12, 8, 16, 18, "#ffaa22"); r(4, 14, 32, 8, "#ffaa22"); r(17, 0, 6, 30, "#ffcc33");
+    r(14, 11, 12, 12, "#ffe680"); r(17, 13, 6, 8, "#ffffff");
+  });
+}
+
+/* =====================================================================
+   5. LORE (textos de historia)
+   Para el paso 3: agregar más entradas a LOGS y referenciarlas desde el mapa.
+   ===================================================================== */
+const LOGS = {
+  korval_0417: {
+    header:
+`UAC · DIVISIÓN DE FÍSICA DE COMPUERTAS
+ESTACIÓN DE RELEVO E-3 · FOBOS
+REGISTRO PERSONAL 0417 — DRA. INÉS KORVAL, JEFA DE CALIBRACIÓN
+NIVEL DE ACCESO: RESTRINGIDO`,
+    body:
+`Día 212. En los informes seguimos escribiendo "teletransportación" porque es lo que la junta quiere leer. No es eso. Las compuertas de Fobos y Deimos no mueven materia de un punto a otro: la sacan de nuestro espacio, la hacen pasar por OTRO LUGAR y después la devuelven. Durante esos 0,3 segundos el objeto está en algún sitio. Los sensores registran calor, presión y algo que el software insiste en clasificar como "actividad acústica estructurada". Los sujetos de prueba que vuelven no hablan de eso. Los que hablan, no vuelven al trabajo.
+
+Hoy revisé los registros de arranque de la Compuerta Deimos-1. La activación oficial fue a las 09:00 del 14 de marzo. Pero el núcleo registró una apertura completa a las 08:49 — once minutos antes — con una autorización de nivel ejecutivo. Nadie de mi equipo la hizo. Cuando pedí la bitácora de accesos me respondieron que esa autorización "no existe".
+
+Tampoco existe, según el directorio, la Estación Kepler en Ío. Yo trabajé ahí dos años: era el primer prototipo, antes de que trajeran todo a las lunas de Marte. Hace seis meses dejó de responder y la borraron de los mapas.
+
+Si alguien encuentra esto: no confíen en las lecturas de la compuerta. Y si escuchan algo del otro lado, no contesten.`
+  }
+};
+const INTER_TEXT =
+  `Las compuertas del Sector E-3 se cierran detrás tuyo. El montacargas baja hacia los laboratorios de calibración, ` +
+  `donde la doctora Korval tenía su oficina. En algún lugar ahí abajo, alguien —o algo— sigue usando la autorización que "no existe".` +
+  `<br><br><span style="color:#888">Fin de la versión 1 (motor + primer nivel). Próximamente: más armas, enemigos, niveles y la verdad sobre Kepler.</span>`;
+const LEVEL_NAME = "E1M1: ESTACION DE RELEVO E-3";
+
+/* =====================================================================
+   6. MAPA
+   Leyenda:  # metal   B tech   R ladrillo rojo   D puerta   S puerta secreta (parece pared)
+             T terminal   X interruptor de salida   . piso   , nukage (daña)
+             P jugador (mira al norte)   Z poseído   c cargador   h estimulante   l lámpara
+   ===================================================================== */
+const LEVEL1 = {
+  map: [
+    "###T###BBBBBBBBBBB######",
+    "#l...l#...........#....#",
+    "#.....#..Z........#.h..#",
+    "#.....D....,,,,...S..c.#",
+    "#.....#....,,,,..Z#....#",
+    "#..P..#....,,,,...######",
+    "#..c..#...........######",
+    "#.....#....l......######",
+    "############D###########",
+    "RRRRRRRRRRRR.RRRRRRRRRRR",
+    "R......................R",
+    "R..h.....Z.......Z.....X",
+    "R...l.........c....l...R",
+    "RRRRRRRRRRRRRRRRRRRRRRRR"
+  ],
+  terminals: { "3,0": "korval_0417" },   // celda -> id de log
+  // zonas: luz base, piso/techo y parpadeo (se evalúan en orden, la última que matchea gana)
+  zones: [
+    { x0: 0, y0: 0, x1: 23, y1: 8, light: 15, floor: "floor", ceil: "ceil" },
+    { x0: 19, y0: 1, x1: 22, y1: 4, light: 11, floor: "floor", ceil: "ceil" },          // armario secreto
+    { x0: 0, y0: 9, x1: 23, y1: 13, light: 12, floor: "floor2", ceil: "ceil2", flicker: true }
+  ],
+  lights: ["3,2", "3,6", "9,3", "15,3", "9,6", "15,6"]          // celdas con luminaria en el techo
+};
+
+// Tipos de celda
+const EMPTY = 0, WALL = 1, DOOR = 2, SECRET = 3;
+const level = {
+  w: 0, h: 0, tiles: null, wallTex: null, floorTex: null, ceilTex: null,
+  baseLight: null, light: null, flicker: null, nukage: null,
+  doors: new Map(), terminals: {}, exitCell: -1, totalKills: 0, totalSecrets: 0
+};
+
+function loadLevel(def) {
+  const rows = def.map, MH = rows.length, MW = rows[0].length, N = MW * MH;
+  Object.assign(level, {
+    w: MW, h: MH, tiles: new Uint8Array(N), wallTex: new Uint8Array(N), floorTex: new Uint8Array(N),
+    ceilTex: new Uint8Array(N), baseLight: new Float32Array(N), light: new Float32Array(N),
+    flicker: new Uint8Array(N), nukage: new Uint8Array(N), doors: new Map(), terminals: {},
+    exitCell: -1, totalKills: 0, totalSecrets: 0
+  });
+  entities.length = 0;
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    const ch = rows[y][x], i = y * MW + x;
+    for (const z of def.zones) if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) {
+      level.baseLight[i] = z.light; level.floorTex[i] = T[z.floor]; level.ceilTex[i] = T[z.ceil]; level.flicker[i] = z.flicker ? 1 : 0;
+    }
+    const cx = x + 0.5, cy = y + 0.5;
+    switch (ch) {
+      case "#": level.tiles[i] = WALL; level.wallTex[i] = T.metal; break;
+      case "B": level.tiles[i] = WALL; level.wallTex[i] = T.tech; break;
+      case "R": level.tiles[i] = WALL; level.wallTex[i] = T.brick; break;
+      case "T": level.tiles[i] = WALL; level.wallTex[i] = T.terminal; break;
+      case "X": level.tiles[i] = WALL; level.wallTex[i] = T.exit; level.exitCell = i; break;
+      case "D": level.tiles[i] = DOOR; level.wallTex[i] = T.door; break;
+      case "S": level.tiles[i] = SECRET; level.wallTex[i] = T.metal; level.totalSecrets++; break;
+      case ",": level.nukage[i] = 1; level.floorTex[i] = T.nukage; break;
+      case "P": player.reset(cx, cy, -Math.PI / 2); break;
+      case "Z": spawnZombie(cx, cy); level.totalKills++; break;
+      case "c": spawnPickup(cx, cy, "clip"); break;
+      case "h": spawnPickup(cx, cy, "stim"); break;
+      case "l": spawnDeco(cx, cy, "lamp"); break;
+    }
+  }
+  for (const k of def.lights) { const [x, y] = k.split(",").map(Number); level.ceilTex[y * MW + x] = T.ceilLight; }
+  for (const k in def.terminals) { const [x, y] = k.split(",").map(Number); level.terminals[y * MW + x] = def.terminals[k]; }
+  // Puertas: orientación según las paredes vecinas
+  for (let i = 0; i < N; i++) if (level.tiles[i] === DOOR || level.tiles[i] === SECRET) {
+    const x = i % MW, y = (i / MW) | 0;
+    const horiz = isWallTile(x - 1, y) && isWallTile(x + 1, y); // paredes a los lados en X -> plano horizontal
+    level.doors.set(i, { open: 0, state: "closed", timer: 0, horiz, secret: level.tiles[i] === SECRET, found: false });
+  }
+  // Las celdas de puerta toman la luz de un vecino libre
+  for (const [i] of level.doors) { const n = [i - 1, i + 1, i - MW, i + MW].find(j => level.tiles[j] === EMPTY); if (n !== undefined) level.baseLight[i] = level.baseLight[n]; }
+}
+const inMap = (x, y) => x >= 0 && y >= 0 && x < level.w && y < level.h;
+const isWallTile = (x, y) => !inMap(x, y) || level.tiles[y * level.w + x] === WALL;
+// ¿La celda bloquea el movimiento?
+function isSolidCell(x, y) {
+  if (!inMap(x, y)) return true;
+  const i = y * level.w + x, t = level.tiles[i];
+  if (t === EMPTY) return false;
+  if (t === WALL) return true;
+  return level.doors.get(i).open < 0.9;
+}
+// ¿La celda bloquea la vista / el sonido?
+function blocksSight(x, y) {
+  if (!inMap(x, y)) return true;
+  const i = y * level.w + x, t = level.tiles[i];
+  if (t === EMPTY) return false;
+  if (t === WALL) return true;
+  return level.doors.get(i).open < 0.6;
+}
+function openDoor(i, byPlayer) {
+  const d = level.doors.get(i);
+  if (!d) return;
+  if (d.state === "closed" || d.state === "closing") {
+    d.state = "opening"; Snd.door(true);
+    if (d.secret && !d.found && byPlayer) { d.found = true; game.secrets++; hud.msg("ENCONTRASTE UN AREA SECRETA!"); }
+  } else if (d.state === "open") d.timer = 4;
+}
+function updateDoors(dt) {
+  for (const [i, d] of level.doors) {
+    if (d.state === "opening") { d.open += dt * 2.2; if (d.open >= 1) { d.open = 1; d.state = "open"; d.timer = 4; } }
+    else if (d.state === "open" && !d.secret) {
+      d.timer -= dt;
+      if (d.timer <= 0) { if (cellOccupied(i)) d.timer = 1; else { d.state = "closing"; Snd.door(false); } }
+    } else if (d.state === "closing") {
+      if (cellOccupied(i)) d.state = "opening";                 // rebota como en Doom
+      else { d.open -= dt * 2.2; if (d.open <= 0) { d.open = 0; d.state = "closed"; } }
+    }
+  }
+}
+function cellOccupied(i) {
+  const x = i % level.w, y = (i / level.w) | 0, pad = 0.35;
+  const inside = (ex, ey) => ex > x - pad && ex < x + 1 + pad && ey > y - pad && ey < y + 1 + pad;
+  if (inside(player.x, player.y)) return true;
+  return entities.some(e => e.type === "zombie" && e.hp > 0 && inside(e.x, e.y));
+}
+// Luces: parpadeo aleatorio estilo Doom en las zonas marcadas
+let flickerOn = true, flickerT = 0;
+function updateLights(dt) {
+  flickerT -= dt;
+  if (flickerT <= 0) { flickerOn = !flickerOn; flickerT = flickerOn ? rand(0.3, 2.5) : rand(0.04, 0.15); }
+  const L = level.light, B = level.baseLight, F = level.flicker;
+  for (let i = 0; i < L.length; i++) L[i] = F[i] && !flickerOn ? B[i] - 5 : B[i];
+}
+
+/* =====================================================================
+   7. AUDIO (Web Audio, todo sintetizado). Provisional: en el paso 2 se
+      amplía con más efectos y música generada por código.
+   ===================================================================== */
+const Snd = {
+  ctx: null, noiseBuf: null, master: null,
+  init() {
+    if (this.ctx) { if (this.ctx.state === "suspended") this.ctx.resume(); return; }
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.master = this.ctx.createGain(); this.master.gain.value = 0.5; this.master.connect(this.ctx.destination);
+      const len = this.ctx.sampleRate; this.noiseBuf = this.ctx.createBuffer(1, len, len);
+      const d = this.noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    } catch (e) { this.ctx = null; }
+  },
+  noise(dur, f0, f1, vol, q = 1) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+    s.buffer = this.noiseBuf; f.type = "bandpass"; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); g.connect(this.master); s.start(t); s.stop(t + dur);
+  },
+  tone(type, f0, f1, dur, vol) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur);
+  },
+  pistol() { this.noise(0.22, 2500, 300, 0.9, 0.7); this.tone("square", 160, 40, 0.12, 0.35); },
+  enemyShot() { this.noise(0.2, 1800, 250, 0.5, 0.8); this.tone("square", 120, 40, 0.1, 0.2); },
+  door(open) { this.tone("sawtooth", open ? 60 : 90, open ? 90 : 50, 0.5, 0.12); this.noise(0.5, 300, 150, 0.2, 2); },
+  hurt() { this.tone("square", 220, 90, 0.18, 0.25); },
+  pickup() { this.tone("square", 600, 1200, 0.08, 0.15); },
+  alert() { this.tone("sawtooth", 140, 70, 0.4, 0.2); this.noise(0.35, 600, 200, 0.2, 3); },
+  enemyPain() { this.tone("sawtooth", 260, 120, 0.15, 0.18); },
+  enemyDie() { this.tone("sawtooth", 200, 30, 0.6, 0.25); this.noise(0.4, 500, 100, 0.25, 2); },
+  click() { this.tone("square", 900, 300, 0.06, 0.2); },
+  terminal() { this.tone("square", 1400, 1400, 0.05, 0.08); }
+};
+
+/* =====================================================================
+   8. ENTIDADES
+   ===================================================================== */
+const entities = [];
+
+const player = {
+  x: 0, y: 0, a: 0, dirX: 1, dirY: 0, planeX: 0, planeY: PLANE,
+  hp: 100, armor: 0, ammo: 50, maxAmmo: 200, camZ: 0.5, bobT: 0, moving: 0,
+  fireT: 99, fireCooldown: 0, nukageT: 0, alive: true,
+  reset(x, y, a) {
+    Object.assign(this, { x, y, a, hp: 100, armor: 0, ammo: 50, camZ: 0.5, bobT: 0, fireT: 99, fireCooldown: 0, nukageT: 0, alive: true });
+    this.updateDir();
+  },
+  updateDir() {
+    this.dirX = Math.cos(this.a); this.dirY = Math.sin(this.a);
+    this.planeX = -this.dirY * PLANE; this.planeY = this.dirX * PLANE;
+  },
+  damage(n) {
+    if (!this.alive) return;
+    this.hp -= n; hud.damageFlash = Math.min(1, hud.damageFlash + n / 25);
+    if (this.hp <= 0) { this.hp = 0; this.alive = false; Snd.enemyDie(); game.onPlayerDeath(); }
+    else Snd.hurt();
+  }
+};
+
+// Colisión con mapa y entidades sólidas (círculo aproximado por caja)
+function blockedAt(x, y, r, self) {
+  if (isSolidCell(Math.floor(x - r), Math.floor(y - r)) || isSolidCell(Math.floor(x + r), Math.floor(y - r)) ||
+      isSolidCell(Math.floor(x - r), Math.floor(y + r)) || isSolidCell(Math.floor(x + r), Math.floor(y + r))) return true;
+  for (const e of entities) {
+    if (e === self || !e.solid || (e.type === "zombie" && e.hp <= 0)) continue;
+    const dx = e.x - x, dy = e.y - y, rr = e.radius + r;
+    if (dx * dx + dy * dy < rr * rr) {
+      // permitir alejarse si ya estaban superpuestos
+      if (self) { const ox = e.x - self.x, oy = e.y - self.y; if (ox * ox + oy * oy < dx * dx + dy * dy) continue; }
+      return true;
+    }
+  }
+  if (self && self !== player) {
+    const dx = player.x - x, dy = player.y - y, rr = PLAYER_R + r;
+    if (dx * dx + dy * dy < rr * rr) return true;
+  }
+  return false;
+}
+function moveEntity(e, mx, my, r) {
+  let moved = false;
+  if (mx && !blockedAt(e.x + mx, e.y, r, e)) { e.x += mx; moved = true; }
+  if (my && !blockedAt(e.x, e.y + my, r, e)) { e.y += my; moved = true; }
+  return moved;
+}
+
+// Línea de visión por muestreo a lo largo del segmento
+function lineOfSight(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, dist = Math.hypot(dx, dy), steps = Math.ceil(dist / 0.1);
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (blocksSight(Math.floor(ax + dx * t), Math.floor(ay + dy * t))) return false;
+  }
+  return true;
+}
+
+// Sonido de disparo: se propaga por celdas abiertas (las puertas cerradas lo frenan) — como los sectores de Doom
+function noiseAlert(x, y) {
+  const MW = level.w, seen = new Uint8Array(level.w * level.h), q = [Math.floor(y) * MW + Math.floor(x)];
+  seen[q[0]] = 1;
+  while (q.length) {
+    const i = q.shift(), cx = i % MW, cy = (i / MW) | 0;
+    for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+      if (!inMap(nx, ny) || blocksSight(nx, ny)) continue;
+      const j = ny * MW + nx; if (seen[j]) continue; seen[j] = 1; q.push(j);
+    }
+  }
+  for (const e of entities) if (e.type === "zombie" && e.state === "idle" && seen[Math.floor(e.y) * MW + Math.floor(e.x)]) e.wake();
+}
+
+// --- Enemigo: Poseído (ex-guardia UAC). Para el paso 2, nuevos enemigos pueden copiar este patrón. ---
+function spawnZombie(x, y) {
+  entities.push({
+    type: "zombie", x, y, radius: 0.3, size: 0.85, z: 0, solid: true,
+    hp: 20, state: "idle", t: 0, animT: Math.random(), attackCD: rand(0.6, 1.4), thinkT: 0,
+    seesPlayer: false, wanderT: 0, wanderX: 0, wanderY: 0,
+    wake() { if (this.state === "idle") { this.state = "chase"; Snd.alert(); } },
+    sprite() {
+      switch (this.state) {
+        case "idle": return SPR.zombie_walkA;
+        case "chase": return (this.animT % 0.5) < 0.25 ? SPR.zombie_walkA : SPR.zombie_walkB;
+        case "aim": return SPR.zombie_aim;
+        case "fire": return SPR.zombie_fire;
+        case "pain": return SPR.zombie_pain;
+        case "dying": return this.t < 0.15 ? SPR.zombie_die1 : this.t < 0.32 ? SPR.zombie_die2 : SPR.zombie_die3;
+        default: return SPR.zombie_die3;
+      }
+    },
+    bright() { return this.state === "fire"; },
+    hurt(n) {
+      if (this.hp <= 0) return;
+      this.hp -= n;
+      if (this.hp <= 0) {
+        this.state = "dying"; this.t = 0; this.solid = false; game.kills++; Snd.enemyDie();
+        spawnPickup(this.x, this.y, "clip");          // como el zombieman, suelta un cargador
+      } else {
+        if (this.state === "idle") this.wake();
+        if (Math.random() < 0.75) { this.state = "pain"; this.t = 0; Snd.enemyPain(); }
+      }
+    },
+    update(dt) {
+      this.t += dt; this.animT += dt;
+      const dx = player.x - this.x, dy = player.y - this.y, dist = Math.hypot(dx, dy);
+      // "pensar" 5 veces por segundo (LOS es lo más caro)
+      this.thinkT -= dt;
+      if (this.thinkT <= 0) { this.thinkT = 0.2; this.seesPlayer = player.alive && dist < 18 && lineOfSight(this.x, this.y, player.x, player.y); }
+      switch (this.state) {
+        case "idle":
+          if (this.seesPlayer) this.wake();
+          break;
+        case "chase": {
+          this.attackCD -= dt;
+          if (!player.alive) break;
+          if (this.seesPlayer && this.attackCD <= 0 && dist < 14) { this.state = "aim"; this.t = 0; break; }
+          // moverse hacia el jugador; si se traba, deambular un rato
+          let mx, my;
+          if (this.wanderT > 0) { this.wanderT -= dt; mx = this.wanderX; my = this.wanderY; }
+          else { mx = dx / dist; my = dy / dist; }
+          if (dist > 1.1 || this.wanderT > 0) {
+            const sp = 1.6 * dt;
+            // abrir puertas como los monstruos de Doom
+            const ahead = Math.floor(this.y + my * 0.6) * level.w + Math.floor(this.x + mx * 0.6);
+            if (level.tiles[ahead] === DOOR) openDoor(ahead, false);
+            if (!moveEntity(this, mx * sp, my * sp, this.radius)) {
+              const ang = Math.random() * Math.PI * 2;
+              this.wanderX = Math.cos(ang); this.wanderY = Math.sin(ang); this.wanderT = rand(0.3, 0.8);
+            }
+          }
+          break;
+        }
+        case "aim":
+          if (this.t > 0.4) {
+            this.state = "fire"; this.t = 0; Snd.enemyShot();
+            if (this.seesPlayer || lineOfSight(this.x, this.y, player.x, player.y)) {
+              const hitChance = clamp(0.8 - dist * 0.045, 0.2, 0.8);
+              if (Math.random() < hitChance) player.damage(3 + Math.floor(Math.random() * 3) * 3 + Math.floor(Math.random() * 4));
+            }
+          }
+          break;
+        case "fire":
+          if (this.t > 0.18) { this.state = "chase"; this.attackCD = rand(1.0, 2.4); }
+          break;
+        case "pain":
+          if (this.t > 0.25) this.state = "chase";
+          break;
+        case "dying":
+          if (this.t > 0.5) this.state = "dead";
+          break;
+      }
+    }
+  });
+}
+
+const PICKUPS = {
+  clip: { size: 0.5, apply() { if (player.ammo >= player.maxAmmo) return false; player.ammo = Math.min(player.maxAmmo, player.ammo + 10); hud.msg("RECOGISTE UN CARGADOR."); return true; } },
+  stim: { size: 0.5, apply() { if (player.hp >= 100) return false; player.hp = Math.min(100, player.hp + 10); hud.msg("RECOGISTE UN ESTIMULANTE."); return true; } }
+};
+function spawnPickup(x, y, kind) {
+  entities.push({
+    type: "pickup", kind, x, y, size: PICKUPS[kind].size, z: 0, solid: false,
+    sprite() { return SPR[kind]; }, bright() { return false; },
+    update() {
+      const dx = player.x - this.x, dy = player.y - this.y;
+      if (player.alive && dx * dx + dy * dy < 0.36 && PICKUPS[kind].apply()) {
+        this.remove = true; hud.pickupFlash = 1; Snd.pickup();
+      }
+    }
+  });
+}
+function spawnDeco(x, y, kind) {
+  entities.push({ type: "deco", kind, x, y, size: 1.0, z: 0, solid: true, radius: 0.22,
+    sprite() { return SPR[kind]; }, bright() { return true; }, update() {} });
+}
+function spawnFx(x, y, z, kind) {
+  entities.push({ type: "fx", x, y, z, size: 0.35, solid: false, t: 0,
+    sprite() { return SPR[kind + Math.min(2, (this.t / 0.09) | 0)]; }, bright() { return kind === "puff"; },
+    update(dt) { this.t += dt; if (this.t > 0.27) this.remove = true; } });
+}
+
+// --- Jugador: movimiento, disparo, uso ---
+function updatePlayer(dt) {
+  if (!player.alive) {               // cámara cae al piso al morir
+    player.camZ = Math.max(0.12, player.camZ - dt * 0.8);
+    return;
+  }
+  // giro
+  let turn = 0;
+  if (keys.ArrowLeft) turn -= 1;
+  if (keys.ArrowRight) turn += 1;
+  player.a += turn * TURN_SPEED * dt + input.mouseDX * MOUSE_SENS;
+  input.mouseDX = 0;
+  player.updateDir();
+  // movimiento
+  let fwd = 0, str = 0;
+  if (keys.KeyW || keys.ArrowUp) fwd += 1;
+  if (keys.KeyS || keys.ArrowDown) fwd -= 1;
+  if (keys.KeyD) str += 1;
+  if (keys.KeyA) str -= 1;
+  let mx = player.dirX * fwd - player.dirY * str, my = player.dirY * fwd + player.dirX * str;
+  const len = Math.hypot(mx, my);
+  if (len > 0) {
+    const sp = MOVE_SPEED * (keys.ShiftLeft || keys.ShiftRight ? RUN_MULT : 1) * dt / len;
+    moveEntity(player, mx * sp, my * sp, PLAYER_R);
+    player.bobT += dt * (keys.ShiftLeft || keys.ShiftRight ? 11 : 8);
+    player.moving = Math.min(1, player.moving + dt * 6);
+  } else player.moving = Math.max(0, player.moving - dt * 4);
+  player.camZ = 0.5 + Math.sin(player.bobT * 2) * 0.012 * player.moving;   // leve bob de cámara
+  // nukage: 5 de daño por segundo
+  const ci = Math.floor(player.y) * level.w + Math.floor(player.x);
+  if (level.nukage[ci]) { player.nukageT -= dt; if (player.nukageT <= 0) { player.nukageT = 1; player.damage(5); } }
+  else player.nukageT = 0.3;
+  // disparo
+  player.fireT += dt; player.fireCooldown -= dt;
+  if (input.fire && player.fireCooldown <= 0) firePistol();
+}
+
+function firePistol() {
+  if (player.ammo <= 0) { if (player.fireCooldown < -0.3) { Snd.click(); hud.msg("SIN MUNICION."); player.fireCooldown = 0.4; } return; }
+  player.ammo--; player.fireT = 0; player.fireCooldown = 0.38;
+  Snd.pistol(); noiseAlert(player.x, player.y);
+  // Hitscan: columna central con algo de dispersión, chequeando el z-buffer
+  const col = clamp(W / 2 + Math.round((Math.random() - 0.5) * (player.moving ? 10 : 4)), 0, W - 1);
+  const camX = 2 * col / W - 1, rdx = player.dirX + player.planeX * camX, rdy = player.dirY + player.planeY * camX;
+  const invDet = 1 / (player.planeX * player.dirY - player.dirX * player.planeY);
+  let best = null, bestD = zbuf[col];
+  for (const e of entities) {
+    if (e.type !== "zombie" || e.hp <= 0) continue;
+    const sx = e.x - player.x, sy = e.y - player.y;
+    const tx = invDet * (player.dirY * sx - player.dirX * sy), ty = invDet * (-player.planeY * sx + player.planeX * sy);
+    if (ty < 0.2 || ty >= bestD) continue;
+    const scrX = (W / 2) * (1 + tx / ty), halfW = e.size * 0.24 * PROJ / ty;
+    if (Math.abs(scrX - col) <= halfW + 1) { best = e; bestD = ty; }
+  }
+  if (best) {
+    best.hurt(5 * (1 + Math.floor(Math.random() * 3)));      // 5-15 como la pistola de Doom
+    spawnFx(best.x - rdx * 0.25, best.y - rdy * 0.25, 0.45, "blood");
+  } else {
+    const d = zbuf[col] - 0.06;
+    if (d < 30) spawnFx(player.x + rdx * d, player.y + rdy * d, player.camZ - 0.05, "puff");
+  }
+}
+
+function useAction() {
+  if (!player.alive) return;
+  for (let d = 0.2; d <= USE_RANGE; d += 0.05) {
+    const cx = Math.floor(player.x + player.dirX * d), cy = Math.floor(player.y + player.dirY * d);
+    if (!inMap(cx, cy)) return;
+    const i = cy * level.w + cx, t = level.tiles[i];
+    if (t === EMPTY) continue;
+    if (t === DOOR || t === SECRET) { const dr = level.doors.get(i); if (dr.open >= 0.9) continue; openDoor(i, true); return; }
+    if (level.terminals[i]) { game.openTerminal(level.terminals[i]); return; }
+    if (i === level.exitCell) { game.exitLevel(); return; }
+    Snd.tone("square", 120, 90, 0.08, 0.15);      // "oof": pared sin uso
+    return;
+  }
+}
+
+function updateEntities(dt) {
+  for (const e of entities) e.update(dt);
+  for (let i = entities.length - 1; i >= 0; i--) if (entities[i].remove) entities.splice(i, 1);
+}
+
+/* =====================================================================
+   9. INPUT
+   ===================================================================== */
+const keys = {};
+const input = { mouseDX: 0, fire: false, locked: false };
+const canvas = document.getElementById("screen");
+const gameEl = document.getElementById("game");
+
+addEventListener("keydown", e => {
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Tab"].includes(e.code)) e.preventDefault();
+  if (e.repeat) return;
+  keys[e.code] = true;
+  game.onKey(e.code);
+});
+addEventListener("keyup", e => { keys[e.code] = false; });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; input.fire = false; });
+document.addEventListener("mousemove", e => { if (input.locked && game.state === "play") input.mouseDX += e.movementX || 0; });
+gameEl.addEventListener("mousedown", e => {
+  Snd.init();
+  game.onClick();
+  if (e.button === 0 && game.state === "play") input.fire = true;
+});
+addEventListener("mouseup", e => { if (e.button === 0) input.fire = false; });
+document.addEventListener("pointerlockchange", () => {
+  const was = input.locked;
+  input.locked = document.pointerLockElement === canvas;
+  if (was && !input.locked && game.state === "play") game.setPause(true);
+});
+function requestLock() { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+
+/* =====================================================================
+   10. MOTOR — raycaster
+   Orden: piso/techo (floor casting por filas) -> paredes y puertas (DDA por columna,
+   llena el z-buffer) -> sprites ordenados de atrás hacia adelante con z-buffer.
+   ===================================================================== */
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+const frameImg = ctx.createImageData(W, VIEW_H);
+const buf = new Uint32Array(frameImg.data.buffer);
+const zbuf = new Float32Array(W);
+let lightBoost = 0, animClock = 0;
+
+function castFloorRow(y, dist, texArr) {
+  const P = player, MW = level.w, MH = level.h, L = level.light;
+  let fx = P.x + dist * (P.dirX - P.planeX), fy = P.y + dist * (P.dirY - P.planeY);
+  const sx = dist * 2 * P.planeX / W, sy = dist * 2 * P.planeY / W;
+  const dl = dist * LIGHT_FALLOFF - lightBoost;
+  const anim = (animClock * 10) | 0;
+  let o = y * W;
+  for (let x = 0; x < W; x++, o++, fx += sx, fy += sy) {
+    const cx = Math.floor(fx), cy = Math.floor(fy);
+    if (cx < 0 || cy < 0 || cx >= MW || cy >= MH) { buf[o] = 0xff000000; continue; }
+    const ci = cy * MW + cx, tex = TEXLIST[texArr[ci]];
+    let lvl = (L[ci] - dl) | 0; lvl = lvl < 0 ? 0 : lvl > 15 ? 15 : lvl;
+    let tx = ((fx - cx) * TEX) | 0, ty = ((fy - cy) * TEX) | 0;
+    if (tex.anim) { tx = (tx + anim) & 63; ty = (ty + (anim >> 1)) & 63; }
+    buf[o] = tex.shades[lvl][ty * TEX + tx];
+  }
+}
+
+function renderWalls() {
+  const P = player, MW = level.w, tiles = level.tiles, L = level.light;
+  for (let x = 0; x < W; x++) {
+    const camX = 2 * x / W - 1;
+    const rdx = P.dirX + P.planeX * camX, rdy = P.dirY + P.planeY * camX;
+    let mapX = Math.floor(P.x), mapY = Math.floor(P.y);
+    const ddx = rdx === 0 ? 1e30 : Math.abs(1 / rdx), ddy = rdy === 0 ? 1e30 : Math.abs(1 / rdy);
+    let stepX, stepY, sdx, sdy;
+    if (rdx < 0) { stepX = -1; sdx = (P.x - mapX) * ddx; } else { stepX = 1; sdx = (mapX + 1 - P.x) * ddx; }
+    if (rdy < 0) { stepY = -1; sdy = (P.y - mapY) * ddy; } else { stepY = 1; sdy = (mapY + 1 - P.y) * ddy; }
+    let side = 0, perp = 1e9, texId = -1, wallX = 0, prevDoor = false, lightCell = mapY * MW + mapX, flip = false;
+    for (let s = 0; s < 64; s++) {
+      const prevCell = mapY * MW + mapX;
+      if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; } else { sdy += ddy; mapY += stepY; side = 1; }
+      if (mapX < 0 || mapY < 0 || mapX >= level.w || mapY >= level.h) break;
+      const ci = mapY * MW + mapX, t = tiles[ci];
+      if (t === EMPTY) { prevDoor = false; continue; }
+      if (t === DOOR || (t === SECRET && level.doors.get(ci).open > 0)) {
+        // Puerta "hundida" a mitad de celda (estilo Wolf3D) que se desliza lateralmente
+        const d = level.doors.get(ci);
+        let dist, hit;
+        if (!d.horiz) { dist = (mapX + 0.5 - P.x) / rdx; hit = P.y + dist * rdy; if (Math.floor(hit) !== mapY || dist <= 0) { prevDoor = true; continue; } wallX = hit - mapY; side = 0; flip = rdx < 0; }
+        else          { dist = (mapY + 0.5 - P.y) / rdy; hit = P.x + dist * rdx; if (Math.floor(hit) !== mapX || dist <= 0) { prevDoor = true; continue; } wallX = hit - mapX; side = 1; flip = rdy > 0; }
+        if (wallX < d.open) { prevDoor = true; continue; }       // parte abierta: el rayo pasa
+        wallX -= d.open; perp = dist; texId = d.secret ? T.metal : T.door; lightCell = ci;
+        break;
+      }
+      // pared sólida (o puerta secreta cerrada, que se dibuja como pared)
+      perp = side === 0 ? sdx - ddx : sdy - ddy;
+      wallX = side === 0 ? P.y + perp * rdy : P.x + perp * rdx;
+      wallX -= Math.floor(wallX);
+      flip = (side === 0 && rdx > 0) || (side === 1 && rdy < 0);
+      texId = prevDoor && tiles[prevCell] === DOOR ? T.doortrak : level.wallTex[ci];
+      lightCell = prevCell;
+      break;
+    }
+    zbuf[x] = perp;
+    if (texId < 0) continue;
+    let tx = (wallX * TEX) | 0; if (flip) tx = TEX - 1 - tx; tx &= 63;
+    const lineH = PROJ / perp;
+    const top = HORIZON - (1 - P.camZ) * lineH, bot = HORIZON + P.camZ * lineH;
+    const y0 = Math.max(0, Math.ceil(top)), y1 = Math.min(VIEW_H, Math.ceil(bot));
+    let lvl = (L[lightCell] - perp * LIGHT_FALLOFF + lightBoost - (side ? 1 : 0)) | 0;
+    lvl = lvl < 0 ? 0 : lvl > 15 ? 15 : lvl;
+    const sh = TEXLIST[texId].shades[lvl], step = TEX / (bot - top);
+    let tp = (y0 - top) * step, o = y0 * W + x;
+    for (let y = y0; y < y1; y++, o += W, tp += step) buf[o] = sh[((tp | 0) & 63) * TEX + tx];
+  }
+}
+
+const visList = [];
+function renderSprites() {
+  const P = player, invDet = 1 / (P.planeX * P.dirY - P.dirX * P.planeY);
+  visList.length = 0;
+  for (const e of entities) {
+    const sx = e.x - P.x, sy = e.y - P.y;
+    const ty = invDet * (-P.planeY * sx + P.planeX * sy);
+    if (ty < 0.15) continue;
+    e._tx = invDet * (P.dirY * sx - P.dirX * sy); e._ty = ty;
+    visList.push(e);
+  }
+  visList.sort((a, b) => b._ty - a._ty);
+  for (const e of visList) {
+    const spr = e.sprite(); if (!spr) continue;
+    const ty = e._ty, scrX = (W / 2) * (1 + e._tx / ty);
+    const size = e.size * PROJ / ty;
+    const bot = HORIZON + (P.camZ - e.z) * PROJ / ty, top = bot - size;
+    const left = scrX - size / 2;
+    const x0 = Math.max(0, Math.ceil(left)), x1 = Math.min(W, Math.ceil(left + size));
+    const y0 = Math.max(0, Math.ceil(top)), y1 = Math.min(VIEW_H, Math.ceil(bot));
+    if (x0 >= x1 || y0 >= y1) continue;
+    const ci = Math.floor(e.y) * level.w + Math.floor(e.x);
+    let lvl = e.bright() ? 15 : ((level.light[ci] || 12) - ty * LIGHT_FALLOFF + lightBoost) | 0;
+    lvl = lvl < 0 ? 0 : lvl > 15 ? 15 : lvl;
+    const sh = spr.shades[lvl], sw = spr.w, shh = spr.h, step = shh / size;
+    for (let x = x0; x < x1; x++) {
+      if (ty >= zbuf[x]) continue;
+      const tx = ((x - left) * sw / size) | 0;
+      let tp = (y0 - top) * step, o = y0 * W + x;
+      for (let y = y0; y < y1; y++, o += W, tp += step) {
+        const c = sh[(tp | 0) * sw + tx];
+        if (c) buf[o] = c;
+      }
+    }
+  }
+}
+
+function render3D() {
+  lightBoost = player.fireT < 0.08 ? 3 : 0;     // fogonazo ilumina la escena
+  const P = player;
+  for (let k = 0; k < HORIZON; k++) {
+    const p = k + 0.5;
+    castFloorRow(HORIZON + k, P.camZ * PROJ / p, level.floorTex);
+    castFloorRow(HORIZON - 1 - k, (1 - P.camZ) * PROJ / p, level.ceilTex);
+  }
+  renderWalls();
+  renderSprites();
+  ctx.putImageData(frameImg, 0, 0);
+}
+
+/* =====================================================================
+   11. HUD
+   ===================================================================== */
+const hud = {
+  messages: [], damageFlash: 0, pickupFlash: 0, faceLook: 0, faceT: 0, bar: null, faces: null,
+  msg(text) { this.messages.push({ text, t: 3 }); if (this.messages.length > 3) this.messages.shift(); },
+  init() {
+    // Fondo de la barra de estado pre-renderizado
+    this.bar = makeCanvas(W, HUD_H, (r, g) => {
+      const R = mulberry32(42);
+      for (let y = 0; y < HUD_H; y++) for (let x = 0; x < W; x++) {
+        const n = 0.8 + R() * 0.35; r(x, y, 1, 1, `rgb(${92 * n | 0},${86 * n | 0},${76 * n | 0})`);
+      }
+      r(0, 0, W, 1, "#c8bca4"); r(0, 1, W, 1, "#6a6252");
+      const box = (x, w) => { r(x, 3, w, 27, "#3a352c"); r(x, 3, w, 1, "#1e1a14"); r(x, 29, w, 1, "#b0a48a"); r(x, 3, 1, 27, "#1e1a14"); r(x + w - 1, 3, 1, 27, "#b0a48a"); };
+      box(2, 50); box(54, 54); box(110, 40); box(152, 30); box(184, 54); box(240, 14); box(256, 62);
+      const lab = (s, cx) => drawText(g, s, Math.round(cx - textWidth(s) / 2), 23, "#e8d8b0", 1, false);
+      lab("MUNICION", 27); lab("SALUD", 81); lab("ARMAS", 130); lab("ARMADURA", 211);
+      drawText(g, "BALA", 260, 7, "#e8d8b0", 1, false); drawText(g, "CART", 260, 13, "#e8d8b0", 1, false);
+      drawText(g, "COHE", 260, 19, "#e8d8b0", 1, false); drawText(g, "CELD", 260, 25, "#e8d8b0", 1, false);
+    });
+    // Cara del marine (paso 2: variantes por salud y daño recibido)
+    const face = (look, dead) => makeCanvas(26, 26, r => {
+      r(4, 3, 18, 22, "#b07a52"); r(3, 6, 20, 15, "#b07a52"); r(4, 2, 18, 5, "#5a3a1c"); r(3, 4, 2, 6, "#5a3a1c"); r(21, 4, 2, 6, "#5a3a1c");
+      r(5, 20, 16, 5, "#8a5a3a");
+      if (dead) { r(6, 10, 5, 1, "#300"); r(15, 10, 5, 1, "#300"); r(8, 8, 1, 5, "#300"); r(17, 8, 1, 5, "#300"); r(9, 18, 8, 3, "#400"); r(4, 6, 4, 10, "#900"); return; }
+      r(6, 9, 6, 4, "#eee"); r(14, 9, 6, 4, "#eee");
+      r(8 + look, 10, 2, 2, "#225"); r(16 + look, 10, 2, 2, "#225");
+      r(6, 8, 6, 1, "#4a2a12"); r(14, 8, 6, 1, "#4a2a12");
+      r(12, 12, 2, 5, "#8a5a3a"); r(9, 19, 8, 1, "#5a2a1a");
+    });
+    this.faces = { "-2": face(-2), "0": face(0), "2": face(2), dead: face(0, true) };
+  },
+  update(dt) {
+    for (const m of this.messages) m.t -= dt;
+    this.messages = this.messages.filter(m => m.t > 0);
+    this.damageFlash = Math.max(0, this.damageFlash - dt * 1.5);
+    this.pickupFlash = Math.max(0, this.pickupFlash - dt * 4);
+    this.faceT -= dt;
+    if (this.faceT <= 0) { this.faceT = rand(0.8, 2.2); this.faceLook = [-2, 0, 0, 2][(Math.random() * 4) | 0]; }
+  },
+  drawWeapon() {
+    if (!player.alive) return;
+    const bob = player.moving;
+    let ox = Math.cos(player.bobT) * 6 * bob, oy = Math.abs(Math.sin(player.bobT)) * 5 * bob;
+    const f = player.fireT;
+    let kick = 0;                       // retroceso: sube con el fogonazo, baja y vuelve
+    if (f < 0.07) kick = -4; else if (f < 0.18) kick = 7; else if (f < 0.36) kick = 7 * (1 - (f - 0.18) / 0.18);
+    if (f >= 0.07 && f < 0.18) ox += 2;
+    const gx = Math.round(W / 2 - 40 + ox), gy = Math.round(VIEW_H - 62 + oy + kick);
+    if (f < 0.07) ctx.drawImage(GUN_FLASH, gx + 20, gy - 18);
+    ctx.drawImage(GUN, gx, gy);
+  },
+  drawBar() {
+    ctx.drawImage(this.bar, 0, VIEW_H);
+    const y = VIEW_H + 5, red = "#d42020";
+    const num = (s, right) => drawText(ctx, s, right - textWidth(s, 3), y, red, 3);
+    num(String(player.ammo), 48);
+    num(player.hp + "%", 106);
+    num(player.armor + "%", 236);
+    // ARMAS: 2 = pistola (las demás se encienden en el paso 2)
+    for (let i = 2; i <= 7; i++) {
+      const cx = 115 + ((i - 2) % 3) * 12, cy = VIEW_H + 7 + Math.floor((i - 2) / 3) * 8;
+      drawText(ctx, String(i), cx, cy, i === 2 ? "#ffd84a" : "#6a604c", 1, false);
+    }
+    // Cara
+    const face = player.alive ? this.faces[String(this.faceLook)] : this.faces.dead;
+    ctx.drawImage(face, 154, VIEW_H + 4);
+    if (player.alive && this.damageFlash > 0.25) { ctx.fillStyle = `rgba(200,0,0,${this.damageFlash * 0.5})`; ctx.fillRect(154, VIEW_H + 4, 26, 26); }
+    // Llaves (vacías por ahora)
+    for (let k = 0; k < 3; k++) { ctx.fillStyle = "#2a261e"; ctx.fillRect(243, VIEW_H + 6 + k * 8, 8, 6); }
+    // Detalle de munición
+    const am = (v, max, row) => drawText(ctx, `${v}/${max}`, 280, VIEW_H + 7 + row * 6, "#ffd84a", 1, false);
+    am(player.ammo, player.maxAmmo, 0); am(0, 50, 1); am(0, 50, 2); am(0, 300, 3);
+  },
+  draw(fps) {
+    this.drawWeapon();
+    // flashes de pantalla
+    if (this.damageFlash > 0) { ctx.fillStyle = `rgba(255,0,0,${Math.min(0.55, this.damageFlash * 0.55)})`; ctx.fillRect(0, 0, W, VIEW_H); }
+    if (this.pickupFlash > 0) { ctx.fillStyle = `rgba(255,220,90,${this.pickupFlash * 0.22})`; ctx.fillRect(0, 0, W, VIEW_H); }
+    if (!player.alive) { ctx.fillStyle = "rgba(120,0,0,0.35)"; ctx.fillRect(0, 0, W, VIEW_H); }
+    // mensajes arriba a la izquierda
+    this.messages.forEach((m, i) => drawText(ctx, m.text, 3, 3 + i * 7, "#ff5040"));
+    // mira
+    if (player.alive) { ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.fillRect(W / 2, HORIZON - 3, 1, 2); ctx.fillRect(W / 2, HORIZON + 2, 1, 2); ctx.fillRect(W / 2 - 3, HORIZON, 2, 1); ctx.fillRect(W / 2 + 2, HORIZON, 2, 1); }
+    if (game.showFps) drawText(ctx, fps + " FPS", W - textWidth(fps + " FPS") - 3, 3, "#7f7");
+    this.drawBar();
+  }
+};
+
+/* =====================================================================
+   12. JUEGO — estados y bucle principal
+   ===================================================================== */
+const ui = {
+  title: document.getElementById("title"), pause: document.getElementById("pause"),
+  terminal: document.getElementById("terminal"), termHdr: document.getElementById("termHdr"),
+  termBody: document.getElementById("termBody"), dead: document.getElementById("dead"),
+  inter: document.getElementById("inter"), interStats: document.getElementById("interStats"),
+  interText: document.getElementById("interText")
+};
+const show = (el, on) => el.classList.toggle("hidden", !on);
+
+const game = {
+  state: "title",     // title | play | pause | terminal | dead | exiting | inter
+  kills: 0, secrets: 0, time: 0, showFps: false, exitT: 0, termText: "", termPos: 0, readLogs: new Set(),
+  start() {
+    rng = mulberry32(7);
+    loadLevel(LEVEL1);
+    this.kills = 0; this.secrets = 0; this.time = 0;
+    hud.messages = []; hud.damageFlash = 0; hud.pickupFlash = 0;
+    hud.msg(LEVEL_NAME);
+    for (const el of [ui.title, ui.pause, ui.dead, ui.inter, ui.terminal]) show(el, false);
+    this.state = "play";
+    requestLock();
+  },
+  setPause(on) {
+    if (on && this.state === "play") { this.state = "pause"; show(ui.pause, true); input.fire = false; }
+    else if (!on && this.state === "pause") { this.state = "play"; show(ui.pause, false); requestLock(); }
+  },
+  onClick() {
+    if (this.state === "title" || this.state === "dead" || this.state === "inter") this.start();
+    else if (this.state === "pause") this.setPause(false);
+    else if (this.state === "terminal") this.closeTerminal();
+    else if (this.state === "play" && !input.locked) requestLock();
+  },
+  onKey(code) {
+    if (code === "KeyF") this.showFps = !this.showFps;
+    switch (this.state) {
+      case "play":
+        if (code === "KeyE" || code === "Space") useAction();
+        if (code === "ControlLeft" || code === "ControlRight") input.fire = true;
+        if (code === "Escape" && !input.locked) this.setPause(true);
+        break;
+      case "pause": if (code === "Escape" || code === "Enter") this.setPause(false); break;
+      case "terminal":
+        if (code === "KeyE" || code === "Space" || code === "Escape" || code === "Enter") {
+          if (this.termPos < this.termText.length) { this.termPos = this.termText.length; ui.termBody.textContent = this.termText; }
+          else this.closeTerminal();
+        }
+        break;
+      case "title": case "dead": case "inter":
+        if (code === "Enter") { Snd.init(); this.start(); }
+        break;
+    }
+  },
+  openTerminal(id) {
+    const log = LOGS[id]; if (!log) return;
+    this.state = "terminal"; input.fire = false;
+    ui.termHdr.textContent = log.header; ui.termBody.textContent = "";
+    this.termText = log.body; this.termPos = 0;
+    show(ui.terminal, true); Snd.terminal();
+    if (!this.readLogs.has(id)) { this.readLogs.add(id); }
+  },
+  closeTerminal() { show(ui.terminal, false); this.state = "play"; for (const k in keys) keys[k] = false; },
+  exitLevel() {
+    level.wallTex[level.exitCell] = T.exitOn; Snd.click(); Snd.door(true);
+    this.state = "exiting"; this.exitT = 0.8; input.fire = false;
+  },
+  onPlayerDeath() {
+    this.state = "dying"; this.exitT = 1.6; input.fire = false;
+  },
+  update(dt) {
+    animClock += dt;
+    if (this.state === "play") {
+      this.time += dt;
+      updatePlayer(dt); updateEntities(dt); updateDoors(dt); updateLights(dt); hud.update(dt);
+    } else if (this.state === "dying") {
+      updatePlayer(dt); updateEntities(dt); updateDoors(dt); updateLights(dt); hud.update(dt);
+      this.exitT -= dt;
+      if (this.exitT <= 0) { this.state = "dead"; show(ui.dead, true); if (document.pointerLockElement) document.exitPointerLock(); }
+    } else if (this.state === "exiting") {
+      this.exitT -= dt; updateLights(dt); hud.update(dt);
+      if (this.exitT <= 0) this.showIntermission();
+    } else if (this.state === "terminal") {
+      // efecto máquina de escribir
+      if (this.termPos < this.termText.length) {
+        this.termPos = Math.min(this.termText.length, this.termPos + Math.ceil(dt * 260));
+        ui.termBody.textContent = this.termText.slice(0, this.termPos);
+      }
+    }
+  },
+  showIntermission() {
+    this.state = "inter";
+    const t = Math.floor(this.time), mm = String(Math.floor(t / 60)).padStart(2, "0"), ss = String(t % 60).padStart(2, "0");
+    const pct = (a, b) => b ? Math.round(a / b * 100) : 100;
+    ui.interStats.innerHTML =
+      `ENEMIGOS &nbsp; ${pct(this.kills, level.totalKills)}%<br>SECRETOS &nbsp; ${pct(this.secrets, level.totalSecrets)}%<br>` +
+      `LOGS LEÍDOS &nbsp; ${this.readLogs.size}/${Object.keys(LOGS).length}<br>TIEMPO &nbsp; ${mm}:${ss}`;
+    ui.interText.innerHTML = INTER_TEXT;
+    show(ui.inter, true);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+};
+
+// Escalado del canvas a la ventana (manteniendo 8:5)
+function fit() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  gameEl.style.width = Math.floor(W * s) + "px";
+  gameEl.style.height = Math.floor(H * s) + "px";
+}
+addEventListener("resize", fit);
+
+// Bucle principal
+let last = performance.now(), fpsAcc = 0, fpsFrames = 0, fps = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  fpsAcc += dt; fpsFrames++;
+  if (fpsAcc >= 0.5) { fps = Math.round(fpsFrames / fpsAcc); fpsAcc = 0; fpsFrames = 0; }
+  game.update(dt);
+  if (game.state !== "title") { render3D(); hud.draw(fps); }
+  requestAnimationFrame(frame);
+}
+
+// Arranque
+genTextures(); genSprites(); genWeapon(); hud.init();
+loadLevel(LEVEL1);       // nivel de fondo detrás de la pantalla de título
+fit();
+render3D(); hud.draw(0);
+requestAnimationFrame(frame);
+window.__game = { game, player, level, entities, keys, input };   // acceso para depuración
+</script>
+</body>
+</html>
